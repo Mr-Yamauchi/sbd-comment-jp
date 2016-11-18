@@ -1,0 +1,180 @@
+#!/bin/bash
+#
+# This STONITH script drives the shared-storage stonith plugin.
+#
+# Copyright (C) 2013 Lars Marowsky-Bree <lmb@suse.com>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public
+# License as published by the Free Software Foundation; either
+# version 2 of the License, or (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+#
+
+# Main code
+
+if [ -z "$sbd_device" ]; then
+	if [ -f /etc/sysconfig/sbd ]; then
+		source /etc/sysconfig/sbd
+		sbd_device=$SBD_DEVICE
+	fi
+fi
+
+SBD_DEVS=${sbd_device%;}
+
+sbd_device=${SBD_DEVS//;/ -d }
+
+sbd_check_device() {
+	if [ -z "$sbd_device" ]; then
+		ha_log.sh err "No sbd device(s) found in the configuration."
+		exit 1
+	fi
+}
+
+sbd_validate_timeout() {
+	case "$timeout_bypass" in
+	    yes|true|1|YES|TRUE|ja|on|ON) return ;;
+	esac
+	crm_timeout=$[$(crm_attribute -t crm_config -G -n stonith-timeout -d 20s -q | sed -e 's/\(.*\)s/\1/' -e 's/\(.*\)m/\1*60/')]
+	sbd_timeout=$(sbd -d $sbd_device dump | perl -ne 'if (/msgwait.*: (\d+)/) { print "$1\n"; }' | head -n 1)
+	if [ "$sbd_timeout" -eq "0" ]; then
+		return
+	fi
+
+	sbd_timeout_min=$[$sbd_timeout*12/10]
+	if [ "$sbd_timeout_min" -lt 20 ]; then
+		sbd_timeout_min=20
+	fi
+	sbd_timeout_suggested=$[$sbd_timeout_min*12/10]
+
+	if [ "$crm_timeout" -lt "$sbd_timeout_min" ]; then
+		ha_log.sh err "The CIB property stonith-timeout is set too low for sbd to ever succeed"
+		ha_log.sh err "Recommended value is $sbd_timeout_suggested, updating configuration."
+		crm_attribute -t crm_config -n stonith-timeout -v $sbd_timeout_suggested
+		exit 1
+	fi
+}
+	
+case $1 in
+gethosts)
+    sbd_check_device
+    echo `sbd -d $sbd_device list | cut -f2 | sort | uniq`
+    exit 0
+    ;;
+off|reset)
+    sbd_check_device
+    sbd_validate_timeout
+    message=$1
+    case "$crashdump" in
+	    yes|true|1|YES|TRUE|ja|on|ON) message="crashdump" ;;
+    esac
+    sbd -d $sbd_device message $2 $message
+    exit $?
+    ;;
+status)
+    sbd_check_device
+    sbd_validate_timeout
+    if ! sbd -d $sbd_device list >/dev/null 2>&1 ; then
+    	ha_log.sh err "sbd could not list nodes from $sbd_device"
+    	exit 1
+    fi
+    exit 0
+    ;;
+on)
+    exit 1
+    ;;
+getconfignames)
+    echo "sbd_device crashdump timeout_bypass"
+    exit 0
+    ;;
+getinfo-devid)
+    echo "Shared storage STONITH device"
+    exit 0
+    ;;
+getinfo-devname)
+    echo "Shared storage STONITH device"
+    exit 0
+    ;;
+getinfo-devdescr)
+    cat << DESC
+sbd uses a shared storage device as a medium to communicate
+fencing requests. This allows clusters without network power
+switches; the downside is that access to the shared storage
+device becomes a Single Point of Failure. 
+
+It requires sbd to be configured on all nodes.
+
+Please read http://linux-ha.org/wiki/SBD_Fencing!
+
+DESC
+    exit 0
+    ;;
+getinfo-devurl)
+    echo "http://linux-ha.org/wiki/SBD_Fencing"
+    exit 0
+    ;;
+getinfo-xml)
+    cat << SSHXML
+<parameters>
+
+<parameter name="crashdump">
+<content type="string" />
+<shortdesc lang="en">
+Crashdump instead of regular fence
+</shortdesc>
+<longdesc lang="en">
+If SBD is given a fence command, this option will instead perform a
+kernel crash of a reboot or power-off, which on a properly configured
+system can lead to a crashdump for analysis.
+
+This is less safe for production environments. Please use with caution
+and for debugging purposes only.
+</longdesc>
+</parameter>
+
+<parameter name="sbd_device" unique="1">
+<content type="string" />
+<shortdesc lang="en">
+SBD device(s)
+</shortdesc>
+<longdesc lang="en">
+The block device used for the SBD partition. Up to three
+can be specified if separated by a semicolon. (Please check
+the documentation if specifying two.)
+
+If not specified, will default to the value from /etc/sysconfig/sbd.
+
+</longdesc>
+</parameter>
+
+<parameter name="timeout_bypass">
+<content type="boolean" />
+<shortdesc lang="en">
+Permit a seemingly too short stonith-timeout
+</shortdesc>
+<longdesc lang="en">
+The sbd agent will try to detect a too short stonith-timeout (relative
+to msgwait) in the Pacemaker configuration and automatically correct
+it.
+
+Should that logic fail in your environment or you have legitimate need
+to use a shorter timeout, you can disable it via this parameter.
+</longdesc>
+</parameter>
+
+</parameters>
+SSHXML
+    exit 0
+    ;;
+*)
+    exit 1
+    ;;
+esac

@@ -1,0 +1,24 @@
+[Unit]
+Description=Shared-storage based fencing daemon on pacemaker remote node
+After=systemd-modules-load.service iscsi.service
+PartOf=pacemaker_remote.service
+RefuseManualStop=true
+RefuseManualStart=true
+
+[Service]
+Type=forking
+PIDFile=/var/run/sbd.pid
+EnvironmentFile=-/etc/sysconfig/sbd
+ExecStart=/usr/sbin/sbd $SBD_OPTS -p /var/run/sbd.pid watch
+ExecStop=/usr/bin/kill -TERM $MAINPID
+
+# Could this benefit from exit codes for restart?
+# Does this need to be set to msgwait * 1.2?
+# TimeoutSec=
+# If SBD crashes, it'll very likely suicide immediately due to the
+# hardware watchdog. But one can always try.
+Restart=on-abort
+
+[Install]
+RequiredBy=pacemaker_remote.service
+

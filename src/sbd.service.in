@@ -1,0 +1,25 @@
+[Unit]
+Description=Shared-storage based fencing daemon
+Before=pacemaker.service
+After=systemd-modules-load.service iscsi.service
+PartOf=corosync.service
+RefuseManualStop=true
+RefuseManualStart=true
+
+[Service]
+Type=forking
+PIDFile=@localstatedir@/run/sbd.pid
+EnvironmentFile=-@sysconfdir@/sysconfig/sbd
+ExecStart=@sbindir@/sbd $SBD_OPTS -p @localstatedir@/run/sbd.pid watch 
+ExecStop=@bindir@/kill -TERM $MAINPID
+
+# Could this benefit from exit codes for restart?
+# Does this need to be set to msgwait * 1.2?
+# TimeoutSec=
+# If SBD crashes, it'll very likely suicide immediately due to the
+# hardware watchdog. But one can always try.
+Restart=on-abort
+
+[Install]
+RequiredBy=corosync.service
+

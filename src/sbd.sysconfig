@@ -1,0 +1,66 @@
+## Type: string
+## Default: ""
+#
+# SBD_DEVICE specifies the devices to use for exchanging sbd messages
+# and to monitor. If specifying more than one path, use ";" as
+# separator.
+#
+#SBD_DEVICE=""
+
+## Type: yesno
+## Default: yes
+#
+# Whether to enable the pacemaker integration.
+#
+SBD_PACEMAKER=yes
+
+## Type: list(always,clean)
+## Default: always
+#
+# Specify the start mode for sbd. Setting this to "clean" will only
+# allow sbd to start if it was not previously fenced. See the -S option
+# in the man page.
+#
+SBD_STARTMODE=clean
+
+## Type: yesno
+## Default: no
+#
+# Whether to delay after starting sbd on boot for "msgwait" seconds.
+# This may be necessary if your cluster nodes reboot so fast that the
+# other nodes are still waiting in the fence acknowledgement phase.
+# This is an occasional issue with virtual machines.
+#
+# This option may be ignored at a later point, once pacemaker handles
+# this case better.
+#
+SBD_DELAY_START=no
+
+## Type: yesno
+## Default: yes
+#
+# Whether to use a watchdog.
+#
+SBD_WATCHDOG_DEV=/dev/watchdog
+
+## Type: integer
+## Default: 5
+#
+# How long, in seconds, the watchdog will wait before panicing the
+# node if no-one tickles it.
+#
+# This depends mostly on your storage latency; the majority of devices
+# must be successfully read within this time, or else the node will
+# self-fence.
+#
+# If your sbd device(s) reside on a multipath setup or iSCSI, this
+# should be the time required to detect a path failure.
+#
+SBD_WATCHDOG_TIMEOUT=5
+
+## Type: string
+## Default: ""
+#
+# Additional options for starting sbd
+#
+SBD_OPTS=
