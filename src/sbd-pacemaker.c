@@ -96,13 +96,15 @@ mon_timer_reconnect(gpointer data)
 
 	return FALSE;
 }
-
+/* CIBとの切断コールバック */
 static void
 mon_cib_connection_destroy(gpointer user_data)
 {
 	if (cib) {
 		cib->cmds->signoff(cib);
+		/* 通知状態を切断状態にセット */
 		set_servant_health(pcmk_health_transient, LOG_WARNING, "Disconnected from CIB");
+		/* 再接続タイマーを仕掛ける */
 		timer_id_reconnect = g_timeout_add(reconnect_msec, mon_timer_reconnect, NULL);
 	}
 	cib_connected = 0;
@@ -120,12 +122,15 @@ mon_timer_notify(gpointer data)
 	}
 
 	if (cib_connected) {
+		/* 接続状態の場合*/
 		if (counter == counter_max) {
 			free_xml(current_cib);
 			current_cib = get_cib_copy(cib);
+			/* 状態更新処理 */
 			mon_refresh_state(NULL);
 			counter = 0;
 		} else {
+			/* inqusitorに接続状態を通知 */
 			cib->cmds->noop(cib, 0);
 			notify_parent();
 			counter++;
@@ -143,7 +148,7 @@ mon_shutdown(int nsig)
 {
 	clean_up(0);
 }
-
+/* CIBへの接続処理 */
 static int
 cib_connect(gboolean full)
 {
@@ -164,10 +169,12 @@ cib_connect(gboolean full)
 		}
 
 		current_cib = get_cib_copy(cib);
+		/* 状態更新処理 */
 		mon_refresh_state(NULL);
 
 		if (full) {
 			if (rc == 0) {
+				/* CIBとの切断コールバックをセット */
 				rc = cib->cmds->set_connection_dnotify(cib, mon_cib_connection_destroy);
 				if (rc == -EPROTONOSUPPORT) {
 					/* Notification setup failed, won't be able to reconnect after failure */
@@ -176,6 +183,7 @@ cib_connect(gboolean full)
 			}
 
 			if (rc == 0) {
+				/* CIBの差分通知コールバックをセット */
 				cib->cmds->del_notify_callback(cib, T_CIB_DIFF_NOTIFY, crm_diff_update);
 				rc = cib->cmds->add_notify_callback(cib, T_CIB_DIFF_NOTIFY, crm_diff_update);
 			}
@@ -206,6 +214,7 @@ compute_status(pe_working_set_t * data_set)
 
     if (data_set->dc_node == NULL) {
         set_servant_health(pcmk_health_transient, LOG_INFO, "We don't have a DC right now.");
+	    /* inqusitorへの状態の通知 */
         notify_parent();
         return;
     }
@@ -257,21 +266,21 @@ compute_status(pe_working_set_t * data_set)
                 break;
         }
     }
-
+    /* inqusitorへの状態の通知 */
     notify_parent();
     return;
 }
 
 static crm_trigger_t *refresh_trigger = NULL;
-
 static gboolean
 mon_trigger_refresh(gpointer user_data)
 {
     mainloop_set_trigger(refresh_trigger);
+    /* 状態更新処理 */
     mon_refresh_state(NULL);
     return FALSE;
 }
-
+/* CIBの差分通知コールバック */
 static void
 crm_diff_update(const char *event, xmlNode * msg)
 {
@@ -282,6 +291,7 @@ crm_diff_update(const char *event, xmlNode * msg)
         static mainloop_timer_t *refresh_timer = NULL;
 
         if(refresh_timer == NULL) {
+			/* タイマーとトリガーを生成する */
             refresh_timer = mainloop_timer_add("refresh", 2000, FALSE, mon_trigger_refresh, NULL);
             refresh_trigger = mainloop_add_trigger(G_PRIORITY_LOW, mon_refresh_state, refresh_timer);
         }
@@ -317,15 +327,17 @@ crm_diff_update(const char *event, xmlNode * msg)
      * - at most 2s after the last update
      */
     if (updates > 10 || (now - last_refresh) > (reconnect_msec / 1000)) {
+        /* 状態更新処理 */
         mon_refresh_state(refresh_timer);
         updates = 0;
 
     } else {
+		/* refreshトリガーをセット */
         mainloop_set_trigger(refresh_trigger);
         mainloop_timer_start(refresh_timer);
     }
 }
-
+/* 状態更新処理 */
 static gboolean
 mon_refresh_state(gpointer user_data)
 {
@@ -354,10 +366,11 @@ mon_refresh_state(gpointer user_data)
         set_working_set_defaults(&data_set);
         data_set.input = cib_copy;
         data_set.flags |= pe_flag_have_stonith_resource;
+        /* cibからstatusを展開する */
         cluster_status(&data_set);
-
+		/* 展開したcibの状態から通知状態をセットする */
         compute_status(&data_set);
-
+		/* 展開をクリアする */
         cleanup_calculations(&data_set);
     }
 
@@ -378,7 +391,7 @@ clean_up(int rc)
 	}
 	return;
 }
-
+/* servant:Pacemakerの本体 */
 int
 servant_pcmk(const char *diskname, int mode, const void* argp)
 {
@@ -397,7 +410,8 @@ servant_pcmk(const char *diskname, int mode, const void* argp)
 	if (current_cib == NULL) {
 		cib = cib_new();
 
-		do {
+		do {/* CIBへの接続完了まで繰り返す */
+			/* CIBへの接続 */
 			exit_code = cib_connect(TRUE);
 
 			if (exit_code != 0) {

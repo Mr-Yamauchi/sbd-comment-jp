@@ -120,7 +120,7 @@ struct servants_list_item *lookup_servant_by_pid(pid_t pid)
 	}
 	return s;
 }
-
+/* Servant(Cluster,Pacemakerの停止確認 */
 int check_all_dead(void)
 {
 	struct servants_list_item *s;
@@ -158,10 +158,12 @@ void servant_start(struct servants_list_item *s)
                 return;
 #endif
 	} else if(strcmp("pcmk", s->devname) == 0) {
+		/* servant :Pacemakerの起動　*/
 		DBGLOG(LOG_INFO, "Starting Pacemaker servant");
 		s->pid = assign_servant(s->devname, servant_pcmk, start_mode, NULL);
 
 	} else if(strcmp("cluster", s->devname) == 0) {
+		/* servant :Clusterの起動　*/
 		DBGLOG(LOG_INFO, "Starting Cluster servant");
 		s->pid = assign_servant(s->devname, servant_cluster, start_mode, NULL);
 
@@ -172,7 +174,7 @@ void servant_start(struct servants_list_item *s)
 	clock_gettime(CLOCK_MONOTONIC, &s->t_started);
 	return;
 }
-
+/* servants(Cluster,Pacemakerの起動) */
 void servants_start(void)
 {
 	struct servants_list_item *s;
@@ -455,7 +457,7 @@ void inquisitor_child(void)
 	sigaddset(&procmask, SIGUSR1);
 	sigaddset(&procmask, SIGUSR2);
 	sigprocmask(SIG_BLOCK, &procmask, NULL);
-
+	/* servants(Cluster,Pacemakerの起動) */
 	servants_start();
 
 	timeout.tv_sec = timeout_loop;
@@ -517,6 +519,7 @@ void inquisitor_child(void)
 		}
 
 		if (exiting) {
+			/* Servant(Cluster,Pacemakerの停止確認 */
 			if (check_all_dead()) {
 				if (pidfile) {
 					sbd_unlock_pidfile(pidfile);

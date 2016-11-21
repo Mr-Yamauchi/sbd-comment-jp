@@ -67,6 +67,7 @@ sbd_plugin_membership_dispatch(cpg_handle_t handle,
 #endif
 
 #if SUPPORT_COROSYNC
+/* CPG構成通知コールバック　*/
 void
 sbd_cpg_membership_dispatch(cpg_handle_t handle,
                     const struct cpg_name *groupName,
@@ -74,6 +75,7 @@ sbd_cpg_membership_dispatch(cpg_handle_t handle,
                     const struct cpg_address *left_list, size_t left_list_entries,
                     const struct cpg_address *joined_list, size_t joined_list_entries)
 {
+	/* メンバー接続状態を通知にセット */
     if(member_list_entries > 0) {
         set_servant_health(pcmk_health_online, LOG_INFO,
                            "Connected to %s", name_for_cluster_type(get_cluster_type()));
@@ -81,6 +83,7 @@ sbd_cpg_membership_dispatch(cpg_handle_t handle,
         set_servant_health(pcmk_health_unclean, LOG_WARNING,
                            "Empty %s membership", name_for_cluster_type(get_cluster_type()));
     }
+    /* inqusitorへの状態の通知 */
     notify_parent();
 }
 #endif
@@ -103,6 +106,7 @@ notify_timer_cb(gpointer data)
         case pcmk_cluster_corosync:
         case pcmk_cluster_cman:
             /* TODO - Make a CPG call and only call notify_parent() when we get a reply */
+            /* inqusitorへの状態の通知 */
             notify_parent();
             break;
 
@@ -112,7 +116,7 @@ notify_timer_cb(gpointer data)
     return TRUE;
 }
 
-
+/* corosync CPGサービスへの接続 */
 static void
 sbd_membership_connect(void)
 {
@@ -142,7 +146,7 @@ sbd_membership_connect(void)
 
         } else {
             cl_log(LOG_INFO, "Attempting connection to %s", name_for_cluster_type(stack));
-
+			/* corosync:CPGサービスへの接続 */
             if(crm_cluster_connect(&cluster)) {
                 connected = true;
             }
@@ -153,8 +157,9 @@ sbd_membership_connect(void)
             sleep(reconnect_msec / 1000);
         }
     }
-
+	/* CPG接続待ち状態をセット */
     set_servant_health(pcmk_health_transient, LOG_NOTICE, "Connected, waiting for initial membership");
+    /* inqusitorへの状態の通知 */
     notify_parent();
 
     notify_timer_cb(NULL);
@@ -369,7 +374,7 @@ cluster_shutdown(int nsig)
 {
     clean_up(0);
 }
-
+/* servant:Clusterの本体 */
 int
 servant_cluster(const char *diskname, int mode, const void* argp)
 {
@@ -378,7 +383,7 @@ servant_cluster(const char *diskname, int mode, const void* argp)
     crm_system_name = strdup("sbd:cluster");
     cl_log(LOG_INFO, "Monitoring %s cluster health", name_for_cluster_type(cluster_stack));
     set_proc_title("sbd: watcher: Cluster");
-
+	/* corosyncのCPGサービスへの接続 */
     sbd_membership_connect();
 
     /* stonith_our_uname = cluster.uname; */
