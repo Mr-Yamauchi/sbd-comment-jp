@@ -415,7 +415,7 @@ int quorum_read(int good_servants)
 	else
 		return (good_servants > 0);
 }
-
+/* inquisitor本体 */
 void inquisitor_child(void)
 {
 	int sig, pid;
@@ -612,6 +612,7 @@ void inquisitor_child(void)
                 /*        quorum_read(good_servants), good_servants, tickle, disk_count); */
 
                 if(tickle) {
+					/* WATCHDOGデバイスへの書き込み */
                     watchdog_tickle();
                     clock_gettime(CLOCK_MONOTONIC, &t_last_tickle);
                 }
@@ -662,7 +663,7 @@ void inquisitor_child(void)
                             do_reset();
                         }
 		}
-
+		/* 起動servants(Cluster,Pacemakerの再起動　*/
 		for (s = servants_leader; s; s = s->next) {
 			int age = t_now.tv_sec - s->t_started.tv_sec;
 
@@ -707,6 +708,7 @@ int inquisitor(void)
 
 	inquisitor_pid = make_daemon();
 	if (inquisitor_pid == 0) {
+		/* inquisitor本体の起動 */
 		inquisitor_child();
 	} 
 	
