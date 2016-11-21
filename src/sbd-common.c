@@ -630,7 +630,7 @@ sbd_set_format_string(int method, const char *daemon)
         qb_log_format_set(method, fmt);
     }
 }
-
+/* inqusitorへの通知処理 */
 void
 notify_parent(void)
 {
@@ -638,15 +638,16 @@ notify_parent(void)
     union sigval	signal_value;
 
     memset(&signal_value, 0, sizeof(signal_value));
-    ppid = getppid();
+    ppid = getppid();	/* inqusitorのpidを取得する */
 
     if (ppid == 1) {
         /* Our parent died unexpectedly. Triggering
          * self-fence. */
         cl_log(LOG_WARNING, "Our parent is dead.");
+        /* inqusitorのpid=1の場合には、inqusitorがダウンした為、REBOOTする */
         do_reset();
     }
-
+	/* 通知状態をinqusitorへシグナルする */
     switch (servant_health) {
         case pcmk_health_pending:
         case pcmk_health_shutdown:
@@ -672,7 +673,7 @@ notify_parent(void)
             break;
     }
 }
-
+/* 通知状態をセットする */
 void
 set_servant_health(enum pcmk_health state, int level, char const *format, ...)
 {

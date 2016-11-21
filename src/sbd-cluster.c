@@ -87,23 +87,25 @@ sbd_cpg_membership_dispatch(cpg_handle_t handle,
     notify_parent();
 }
 #endif
-
+/* タイマー通知コールバック */
 static gboolean
 notify_timer_cb(gpointer data)
 {
     cl_log(LOG_DEBUG, "Refreshing %sstate", remote_node?"remote ":"");
 
     if(remote_node) {
+		/* pacemaker_remoteノードの処理の場合 */
+		/* SBDのpacemaker_remote用のチェック処理 */
         sbd_remote_check(NULL);
         return TRUE;
     }
-
+	/* clusterタイプによって通知を切り替える */
     switch (get_cluster_type()) {
         case pcmk_cluster_classic_ais:
             send_cluster_text(crm_class_quorum, NULL, TRUE, NULL, crm_msg_ais);
             break;
 
-        case pcmk_cluster_corosync:
+        case pcmk_cluster_corosync:	/* COROSYNC2.x系の場合 */
         case pcmk_cluster_cman:
             /* TODO - Make a CPG call and only call notify_parent() when we get a reply */
             /* inqusitorへの状態の通知 */
@@ -135,12 +137,14 @@ sbd_membership_connect(void)
 #endif
 
     while(connected == false) {
-
+		/* clusterタイプを取得する */
         enum cluster_type_e stack = get_cluster_type();
         if(get_cluster_type() == pcmk_cluster_unknown) {
             crm_debug("Attempting pacemaker remote connection");
             /* Nothing is up, go looking for the pacemaker remote process */
+            /* clusterタイプが不明の場合は、pacemaker_remoteプロセスを検索する */
             if(find_pacemaker_remote() > 0) {
+				/* pacemaker_remoteプロセスが存在すれば接続状態とする */
                 connected = true;
             }
 
@@ -148,6 +152,7 @@ sbd_membership_connect(void)
             cl_log(LOG_INFO, "Attempting connection to %s", name_for_cluster_type(stack));
 			/* corosync:CPGサービスへの接続 */
             if(crm_cluster_connect(&cluster)) {
+				/* 接続状態とする */
                 connected = true;
             }
         }
@@ -164,16 +169,17 @@ sbd_membership_connect(void)
 
     notify_timer_cb(NULL);
 }
-
+/* corosync:CPGとの切断コールバック */
 static void
 sbd_membership_destroy(gpointer user_data)
 {
     cl_log(LOG_WARNING, "Lost connection to %s", name_for_cluster_type(get_cluster_type()));
-
+	/* 通知状態をUNCLEANにセットする。 */
     set_servant_health(pcmk_health_unclean, LOG_ERR, "Cluster connection terminated");
+    /* inqusitorへの状態の通知 */
     notify_parent();
-
     /* Attempt to reconnect, the watchdog will take the node down if the problem isn't transient */
+    /* corosync CPGサービスへの再接続 */
     sbd_membership_connect();
 }
 
@@ -251,7 +257,7 @@ sbd_procfs_process_info(struct dirent *entry, char *name, int *pid)
     return 0;
 }
 
-
+/* SBDのpacemaker_remote用のチェック処理 */
 static gboolean
 sbd_remote_check(gpointer user_data)
 {
@@ -302,14 +308,16 @@ sbd_remote_check(gpointer user_data)
         expected_path[rc] = 0;
 
         if (strcmp(exe_path, expected_path) == 0) {
+			/* pacemaker_remoteプロセスの存在を確認した場合　 */
             cl_log(LOG_DEBUG, "Poccess %s (%ld) is active",
                    exe_path, (long)remoted_pid);
+            /* 稼働状態としてセット */
             running = 1;
         }
     }
 
   done:
-    
+    /* 稼働、非稼働で通知状態をセットする */
     if(running) {
         set_servant_health(pcmk_health_online, LOG_INFO,
                            "Connected to Pacemaker Remote %lu", (long unsigned int)remoted_pid);
@@ -319,14 +327,16 @@ sbd_remote_check(gpointer user_data)
     }
 
   notify:    
+  	/* inqusitorにpacemaker_remoteプロセスの状態をセットする */
     notify_parent();
 
     if(running == 0) {
+		/* corosync CPGサービスへの接続を試みる */
         sbd_membership_connect();
     }
     return true;
 }
-
+/* pacemaker_remoteプロセス(PID)を検索する */
 static long unsigned int
 find_pacemaker_remote(void)
 {
@@ -340,10 +350,10 @@ find_pacemaker_remote(void)
         cl_log(LOG_NOTICE, "Can not read /proc directory to track existing components");
         return FALSE;
     }
-
+	/* /procからの探索ループ */
     while ((entry = readdir(dp)) != NULL) {
         int pid;
-
+		/* 対象/porcかどうかの判定 */
         if (sbd_procfs_process_info(entry, entry_name, &pid) < 0) {
             continue;
         }
@@ -351,6 +361,7 @@ find_pacemaker_remote(void)
         /* entry_name is truncated to 16 characters including the nul terminator */
         cl_log(LOG_DEBUG, "Found %s at %u", entry_name, pid);
         if (strcmp(entry_name, "pacemaker_remot") == 0) {
+			/* entry_nameが"pacemaker_remot"であれば、pacemaker_remoteのPIDとして保存 */
             cl_log(LOG_NOTICE, "Found Pacemaker Remote at PID %u", pid);
             remoted_pid = pid;
             remote_node = true;

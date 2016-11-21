@@ -76,7 +76,7 @@ static cib_t *cib = NULL;
 static xmlNode *current_cib = NULL;
 
 static long last_refresh = 0;
-
+/* 再接続タイマー処理 */
 static gboolean
 mon_timer_reconnect(gpointer data)
 {
@@ -110,12 +110,12 @@ mon_cib_connection_destroy(gpointer user_data)
 	cib_connected = 0;
 	return;
 }
-
+/* タイマーによる周期監視 */
 static gboolean
 mon_timer_notify(gpointer data)
 {
 	static int counter = 0;
-	int counter_max = timeout_watchdog / timeout_loop;
+	int counter_max = timeout_watchdog / timeout_loop; /* MAXをセット */
 
 	if (timer_id_notify > 0) {
 		g_source_remove(timer_id_notify);
@@ -123,15 +123,17 @@ mon_timer_notify(gpointer data)
 
 	if (cib_connected) {
 		/* 接続状態の場合*/
-		if (counter == counter_max) {
+		if (counter == counter_max) {	/* MAXに到達 */
 			free_xml(current_cib);
+			/* CIBから現在のcib情報を取得 */
 			current_cib = get_cib_copy(cib);
 			/* 状態更新処理 */
 			mon_refresh_state(NULL);
 			counter = 0;
-		} else {
-			/* inqusitorに接続状態を通知 */
+		} else {						/* MAXに非到達 */
+			/* 処理を伴わないCIBとの接続のみを確認する通信を実行 */
 			cib->cmds->noop(cib, 0);
+			/* inqusitorに接続状態を通知 */
 			notify_parent();
 			counter++;
 		}
@@ -201,7 +203,7 @@ cib_connect(gboolean full)
 	return rc;
 }
 
-
+/* 展開したcibの状態から通知状態をセットする */
 static void
 compute_status(pe_working_set_t * data_set)
 {
@@ -238,6 +240,7 @@ compute_status(pe_working_set_t * data_set)
 #endif
 
     } else if (data_set->flags & pe_flag_have_quorum) {
+		/* CIBのhave-quorum="1"ならば、online状態とする */
         set_servant_health(pcmk_health_online, LOG_INFO, "Node state: online");
         ever_had_quorum = TRUE;
 
@@ -245,6 +248,7 @@ compute_status(pe_working_set_t * data_set)
         set_servant_health(pcmk_health_noquorum, LOG_WARNING, "Quorum lost");
 
     } else if(ever_had_quorum == FALSE) {
+		/* CIBのhave-quorum="0"ならば、QUORUM無状態とする */
         set_servant_health(pcmk_health_online, LOG_INFO, "We do not have quorum yet");
 
     } else {
@@ -272,9 +276,11 @@ compute_status(pe_working_set_t * data_set)
 }
 
 static crm_trigger_t *refresh_trigger = NULL;
+/* 更新トリガー処理 */
 static gboolean
 mon_trigger_refresh(gpointer user_data)
 {
+	/* mon_refresh_state()のトリガーをセットする */
     mainloop_set_trigger(refresh_trigger);
     /* 状態更新処理 */
     mon_refresh_state(NULL);
@@ -350,18 +356,19 @@ mon_refresh_state(gpointer user_data)
 
     if(user_data) {
         mainloop_timer_t *timer = user_data;
-
+		/* タイマーを停止 */
         mainloop_timer_stop(timer);
     }
 
     cib_copy = copy_xml(current_cib);
     if (cli_config_update(&cib_copy, NULL, FALSE) == FALSE) {
+		/* CIBの設定が更新されていた場合は、再接続の為に、CIBとの接続を一旦切る */
         cl_log(LOG_WARNING, "cli_config_update() failed - forcing reconnect to CIB");
         if (cib) {
             cib->cmds->signoff(cib);
         }
 
-    } else {
+    } else {	/* 更新されていない場合 */
         last_refresh = time(NULL);
         set_working_set_defaults(&data_set);
         data_set.input = cib_copy;
